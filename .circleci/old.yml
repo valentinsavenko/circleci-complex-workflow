@@ -1,0 +1,157 @@
+# CircleCI 2.1 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-javascript/ for an example application
+#
+# Find out latest version here: https://circleci.com/docs/2.0/configuration-reference/#version
+version: 2.1
+
+parameters:
+  # This parameter is used to trigger the main workflow
+  trigger:
+    type: boolean
+    default: true
+
+  # A parameter per package
+  api:
+    type: boolean
+    default: false
+  app:
+    type: boolean
+    default: false
+
+executors:
+  openjdk-docker:
+    docker:
+      - image: circleci/openjdk:8u212-stretch
+      - image: circleci/mysql:5.7
+        command: |
+          echo "Leo, like chill, dude!"
+  ubuntu-machine:
+    machine: 
+      image: ubuntu-1604:201903-01
+
+references:
+  #  hard-coding this with the assumed user name, because neither tilde nor HOME variable were working in bash scripts
+  user_gradle_properties_file_dir: &user_gradle_properties_file_dir "/home/circleci/.gradle/"
+  user_gradle_properties_file: &user_gradle_properties_file "/home/circleci/.gradle/gradle.properties"
+  workspace_root: &workspace_root "/home/circleci/workspace"
+
+  recreate_user_gradle_properties: &recreate_user_gradle_properties
+    run:
+      name: 'Workaround: Recreate ~/.gradle/gradle.properties that cannot be persisted to workspace'
+      environment:
+        USER_GRADLE_PROPERTIES_FILE_DIR: *user_gradle_properties_file_dir
+        USER_GRADLE_PROPERTIES_FILE: *user_gradle_properties_file
+      command: |
+        mkdir -p "$USER_GRADLE_PROPERTIES_FILE_DIR"
+        cp gradle.properties "$USER_GRADLE_PROPERTIES_FILE"
+
+  move_java_test_results: &move_java_test_results
+    run:
+      name: 'Move test results'
+      command: |
+        mkdir -p ~/test-results/junit/
+
+        # move the output of JUnit or native TestNG XMLs
+        find . -type f -regex ".*/build/test-results/.*\.xml" -exec cp '{}' ~/test-results/junit/ \;
+
+        # move the output of the TestNG (resp. ReportNG) JUnitXMLReporter
+        find . -type f -regex ".*/build/.*/junitreports/.*\.xml" -exec cp '{}' ~/test-results/junit/ \;
+
+        # move HTML reports
+        mkdir -p ~/test-results/htmlreport
+        find . -type d -regex ".*/build/reports/.*/html$" -exec cp -r '{}' ~/test-results/htmlreport/ \;
+      when: always
+
+  save_test_results: &save_test_results
+    store_test_results:
+      path: ~/test-results
+
+  store_test_artifacts: &store_test_artifacts
+    store_artifacts:
+      path: ~/test-results
+
+aliases:
+  - &onlyMainBranch
+    filters:
+      branches:
+        # For as long as we are on the free price plan: Run only on develop + CircleCI feature branches!
+        only: /SPM-3604.*/
+
+commands:
+  pre_unit_test_steps:
+    steps:
+      - attach_workspace:
+          at: *workspace_root
+      - *recreate_user_gradle_properties
+
+  post_unit_test_steps:
+    steps:
+      - *move_java_test_results
+      - *save_test_results
+      - *store_test_artifacts
+
+jobs:
+  build:
+    working_directory: *workspace_root
+    executor: ubuntu-machine
+    # resource_class: large
+    description: 
+    steps:
+      - checkout:
+          path: *workspace_root
+      # must happen after checkout, because paths in the repo are modified
+      - restore_cache:
+          keys:
+            - v1-cleancode-draft-dummy-{{ .Branch }}-{{ .Revision }}
+            - v1-cleancode-draft-dummy-{{ .Branch }}
+            - v1-cleancode-draft-dummy-develop
+     
+      - attach_workspace:
+          at: *workspace_root
+
+      - run:
+          name: 'Run build steps'
+          command: |
+            mkdir -p your/code/says/hi
+            touch your/code/says/hi/important_stuff_to_cache.txt
+         
+      - save_cache:
+          key: v1-cleancode-draft-dummy-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - "your/code/says/hi"
+          
+
+      - persist_to_workspace:
+          root: *workspace_root
+          paths:
+            - .
+
+  ###################################################################
+  ### Test jobs for each of the pre-existing unit test components ###
+  ###################################################################
+  test_unit_backend:
+    working_directory: *workspace_root
+    executor: openjdk-docker
+    steps:
+      - pre_unit_test_steps
+      - run:
+          name: 'Run Adonis tests'
+          command:
+            ./gradlew adonisimport:test --info --stacktrace
+      - post_unit_test_steps
+
+
+###################################
+### Whole unit testing workflow ###
+###################################
+workflows:
+  version: 2
+  run_unit_tests:
+    jobs:
+      - build:
+          <<: *onlyMainBranch
+      - test_unit_backend:
+          <<: *onlyMainBranch
+          requires:
+            - build
