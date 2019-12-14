@@ -1,42 +1,154 @@
-# Java Gradle CircleCI 2.0 configuration file
-#
-# Check https://circleci.com/docs/2.0/language-java/ for more details
-#
-version: 2
-jobs:
-  build:
+# CircleCI 2.1 configuration file
+version: 2.1
+
+parameters:
+  # This parameter is used to trigger the main workflow
+  trigger:
+    type: boolean
+    default: true
+
+  # A parameter per package
+  tests-mock:
+    type: boolean
+    default: false
+  image-mock:
+    type: boolean
+    default: false
+  mailing-mock:
+    type: boolean
+    default: false
+  ui-mock:
+    type: boolean
+    default: false
+  api-mock:
+    type: boolean
+    default: false
+
+executors:
+  openjdk-docker:
     docker:
-      # specify the version you desire here
-      - image: circleci/openjdk:8-jdk
+      - image: circleci/openjdk:8u212-stretch
+      - image: circleci/mysql:5.7
+  ubuntu-machine:
+    machine: 
+      image: ubuntu-1604:201903-01
 
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # - image: circleci/postgres:9.4
-
-    working_directory: ~/repo
-
-    environment:
-      # Customize the JVM maximum heap limit
-      JVM_OPTS: -Xmx3200m
-      TERM: dumb
-
+jobs:
+  trigger-workflows:
+    executor: openjdk-docker
     steps:
       - checkout
+      - run:
+          name: Trigger workflows
+          command: .circleci/circle_trigger.sh
 
-      # Download and cache dependencies
-      - restore_cache:
-          keys:
-            - v1-dependencies-{{ checksum "build.gradle" }}
-            # fallback to using the latest cache if no exact match is found
-            - v1-dependencies-
+  build:
+    parameters:
+      package_name:
+        type: string
 
-      - run: gradle dependencies
+    executor: openjdk-docker
+    working_directory: ~/project/packages/<< parameters.package_name >>
 
-      - save_cache:
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Build
+          command: echo "Build << parameters.package_name >> ..."
+      - persist_to_workspace:
+          root: ~/project
           paths:
-            - ~/.gradle
-          key: v1-dependencies-{{ checksum "build.gradle" }}
+            - packages/<< parameters.package_name >>
 
-      # run tests!
-      - run: gradle test
+  deploy:
+    parameters:
+      package_name:
+        type: string
+
+    executor: openjdk-docker
+    working_directory: ~/project/packages/<< parameters.package_name >>
+
+    steps:
+      - attach_workspace:
+          at: ~/project
+      # This step is added to show that files are available from the build job. 
+      - run:
+          name: Content to deploy
+          command: ls && cat build.txt
+      - deploy:
+          name: Deploy
+          command: echo "Deploying << parameters.package_name >> ..."
+
+workflows:
+  version: 2
+
+  # The main workflow responsible for triggering all other workflows
+  # in which changes are detected.
+  ci:
+    when: << pipeline.parameters.trigger >>
+    jobs:
+      - trigger-workflows
+
+
+  # Workflows defined for each package.
+
+  api:
+    when: << pipeline.parameters.api >>
+    jobs:
+      - build:
+          name: api-build
+          package_name: api
+      - deploy:
+          name: api-deploy
+          package_name: api
+          requires:
+            - api-build
+
+  app:
+    when: << pipeline.parameters.app >>
+    jobs:
+      - build:
+          name: app-build
+          package_name: app
+      - deploy:
+          name: app-deploy
+          package_name: app
+          requires:
+            - app-build
+
+  image:
+    when: << pipeline.parameters.image >>
+    jobs:
+      - build:
+          name: image-build
+          package_name: image
+      - deploy:
+          name: image-deploy
+          package_name: image
+          requires:
+            - image-build
+
+  mailing:
+    when: << pipeline.parameters.mailing >>
+    jobs:
+      - build:
+          name: mailing-build
+          package_name: mailing
+      - deploy:
+          name: mailing-deploy
+          package_name: mailing
+          requires:
+            - mailing-build
+
+  ui:
+    when: << pipeline.parameters.ui >>
+    jobs:
+      - build:
+          name: ui-build
+          package_name: ui
+      - deploy:
+          name: ui-deploy
+          package_name: ui
+          requires:
+            - ui-build

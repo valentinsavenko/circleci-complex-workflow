@@ -1,4 +1,3 @@
-# CircleCI 2.1 configuration file
 #
 # Check https://circleci.com/docs/2.0/language-javascript/ for an example application
 #
@@ -12,12 +11,23 @@ parameters:
     default: true
 
   # A parameter per package
-  api:
+  tests-mock:
     type: boolean
     default: false
-  app:
+  image-mock:
     type: boolean
     default: false
+  mailing-mock:
+    type: boolean
+    default: false
+  ui-mock:
+    type: boolean
+    default: false
+  api-mock:
+    type: boolean
+    default: false
+
+
 
 executors:
   openjdk-docker:
