@@ -10,6 +10,15 @@ REPOSITORY_TYPE="github"
 CIRCLE_API="https://circleci.com/api"
 
 ############################################
+## 0. Check for layer 8 errors
+############################################
+if  [[ ${CIRCLE_TOKEN} == "" ]]; then
+  SCRIPT=`realpath $0`
+  echo "You need to set CIRCLE_TOKEN as ENV-var, or this script (${SCRIPT}) will fail!"
+  exit 1
+fi
+
+############################################
 ## 1. Commit SHA of last CI build
 ############################################
 LAST_COMPLETED_BUILD_URL="${CIRCLE_API}/v1.1/project/${REPOSITORY_TYPE}/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/tree/${CIRCLE_BRANCH}?filter=completed&limit=100&shallow=true"
