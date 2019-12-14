@@ -28,7 +28,24 @@ if  [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
   echo -e "\e[93mThere are no completed CI builds in branch ${CIRCLE_BRANCH}.\e[0m"
 
   # Adapted from https://gist.github.com/joechrysler/6073741
+  TREE=$(git show-branch -a \
+    | grep '\*' \
+    | grep -v `git rev-parse --abbrev-ref HEAD` \
+    | sed 's/.*\[\(.*\)\].*/\1/' \
+    | sed 's/[\^~].*//' \
+    | uniq)
+
+  REMOTE_BRANCHES=$(git branch -r | sed 's/\s*origin\///' | tr '\n' ' ')
   PARENT_BRANCH=master
+  for BRANCH in ${TREE[@]}
+  do
+    BRANCH=${BRANCH#"origin/"}
+    if [[ " ${REMOTE_BRANCHES[@]} " == *" ${BRANCH} "* ]]; then
+        echo "Found the parent branch: ${CIRCLE_BRANCH}..${BRANCH}"
+        PARENT_BRANCH=$BRANCH
+        break
+    fi
+  done
 
   echo "Searching for CI builds in branch '${PARENT_BRANCH}' ..."
 
@@ -37,11 +54,6 @@ if  [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
     | jq -r "map(\
       select(.status == \"success\") | select(.workflows.workflow_name != \"ci\") | select(.build_num < ${CIRCLE_BUILD_NUM})) \
     | .[0][\"vcs_revision\"]"`
-fi
-
-if [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
-  echo -e "\e[93mNo CI builds for branch ${PARENT_BRANCH}. Using master.\e[0m"
-  LAST_COMPLETED_BUILD_SHA=master
 fi
 
 ############################################
