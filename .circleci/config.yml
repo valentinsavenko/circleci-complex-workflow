@@ -1,6 +1,9 @@
 # CircleCI 2.1 configuration file
 version: 2.1
 
+references:
+  workspace_root: &workspace_root "/home/circleci/workspace"
+
 parameters:
   # This parameter is used to trigger the main workflow
   trigger:
@@ -8,19 +11,19 @@ parameters:
     default: true
 
   # A parameter per package
-  tests-mock:
+  api:
     type: boolean
     default: false
-  image-mock:
+  app:
     type: boolean
     default: false
-  mailing-mock:
+  image:
     type: boolean
     default: false
-  ui-mock:
+  mailing:
     type: boolean
     default: false
-  api-mock:
+  ui:
     type: boolean
     default: false
 
@@ -48,16 +51,16 @@ jobs:
         type: string
 
     executor: openjdk-docker
-    working_directory: ~/project/packages/<< parameters.package_name >>
+    working_directory: *workspace_root/<< parameters.package_name >>
 
     steps:
       - checkout:
-          path: ~/project
+          path: *workspace_root
       - run:
           name: Build
           command: echo "Build << parameters.package_name >> ..."
       - persist_to_workspace:
-          root: ~/project
+          root: *workspace_root
           paths:
             - packages/<< parameters.package_name >>
 
@@ -67,11 +70,11 @@ jobs:
         type: string
 
     executor: openjdk-docker
-    working_directory: ~/project/packages/<< parameters.package_name >>
+    working_directory: *workspace_root/<< parameters.package_name >>
 
     steps:
       - attach_workspace:
-          at: ~/project
+          at: *workspace_root
       # This step is added to show that files are available from the build job. 
       - run:
           name: Content to deploy
