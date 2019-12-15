@@ -56,6 +56,11 @@ if  [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
     | .[0][\"vcs_revision\"]"`
 fi
 
+if [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
+  echo -e "\e[93mNo CI builds for branch ${PARENT_BRANCH}. Using master.\e[0m"
+  LAST_COMPLETED_BUILD_SHA=master
+fi
+
 ############################################
 ## 2. Changed packages
 ############################################
