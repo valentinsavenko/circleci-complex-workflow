@@ -8,10 +8,13 @@ set -e
 ROOT="." 
 REPOSITORY_TYPE="github"
 CIRCLE_API="https://circleci.com/api"
+DEFAULT_BRANCH='master'
 
 ############################################
 ## 0. Check for layer 8 errors
 ############################################
+sudo apt install jq -y
+
 if  [[ ${CIRCLE_TOKEN} == "" ]]; then
   SCRIPT=`realpath $0`
   echo "You need to set CIRCLE_TOKEN as ENV-var, or this script (${SCRIPT}) will fail!"
@@ -36,14 +39,14 @@ if  [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
     | uniq)
 
   REMOTE_BRANCHES=$(git branch -r | sed 's/\s*origin\///' | tr '\n' ' ')
-  PARENT_BRANCH=master
+  PARENT_BRANCH=${DEFAULT_BRANCH}
   for BRANCH in ${TREE[@]}
   do
     BRANCH=${BRANCH#"origin/"}
     if [[ " ${REMOTE_BRANCHES[@]} " == *" ${BRANCH} "* ]]; then
-        echo "Found the parent branch: ${CIRCLE_BRANCH}..${BRANCH}"
-        PARENT_BRANCH=$BRANCH
-        break
+      echo "Found the parent branch: ${CIRCLE_BRANCH}..${BRANCH}"
+      PARENT_BRANCH=$BRANCH
+      break
     fi
   done
 
@@ -57,8 +60,8 @@ if  [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
 fi
 
 if [[ ${LAST_COMPLETED_BUILD_SHA} == "null" ]]; then
-  echo -e "\e[93mNo CI builds for branch ${PARENT_BRANCH}. Using master.\e[0m"
-  LAST_COMPLETED_BUILD_SHA=master
+  echo -e "\e[93mNo CI builds for branch ${PARENT_BRANCH}. Using ${DEFAULT_BRANCH}.\e[0m"
+  LAST_COMPLETED_BUILD_SHA=${DEFAULT_BRANCH}
 fi
 
 ############################################
@@ -67,21 +70,31 @@ fi
 PACKAGES=$(ls ${ROOT} -l | grep ^d | awk '{print $9}')
 echo "Searching for changes since commit [${LAST_COMPLETED_BUILD_SHA:0:7}] ..."
 
+if [[ $LAST_COMPLETED_BUILD_SHA == $DEFAULT_BRANCH ]]; then
+  FORCE_ALL_PACKS=true
+fi
+
 ## The CircleCI API parameters object
 PARAMETERS='"trigger":false'
 COUNT=0
 for PACKAGE in ${PACKAGES[@]}
 do
-  PACKAGE_PATH=${ROOT#.}/$PACKAGE
+  PACKAGE_PATH=${ROOT}/$PACKAGE
   LATEST_COMMIT_SINCE_LAST_BUILD=$(git log -1 $CIRCLE_SHA1 ^$LAST_COMPLETED_BUILD_SHA --format=format:%H --full-diff ${PACKAGE_PATH#/})
 
-  if [[ -z "$LATEST_COMMIT_SINCE_LAST_BUILD" ]]; then
-    echo -e "\e[90m  [-] $PACKAGE \e[0m"
-  else
+  if [ -n "$LATEST_COMMIT_SINCE_LAST_BUILD" ] || [ -n "$FORCE_ALL_PACKS" ]; then
     PARAMETERS+=", \"$PACKAGE\":true"
-    COUNT=$((COUNT + 1))
-    echo -e "\e[36m  [+] ${PACKAGE} \e[21m (changed in [${LATEST_COMMIT_SINCE_LAST_BUILD:0:7}])\e[0m"
+    
+    if [[ -n $FORCE_ALL_PACKS ]]; then
+      echo -e "\e[36m  [+] ${PACKAGE} \e[21m will be triggered because we are on the default branch: ${DEFAULT_BRANCH} \e[0m"
+    else
+      COUNT=$((COUNT + 1))
+      echo -e "\e[36m  [+] ${PACKAGE} \e[21m (changed in [${LATEST_COMMIT_SINCE_LAST_BUILD:0:7}])\e[0m"
+    fi
+  else
+    echo -e "\e[90m  [-] ${PACKAGE} \e[0m"
   fi
+
 done
 
 if [[ $COUNT -eq 0 ]]; then
@@ -102,12 +115,12 @@ URL="${CIRCLE_API}/v2/project/${REPOSITORY_TYPE}/${CIRCLE_PROJECT_USERNAME}/${CI
 HTTP_RESPONSE=$(curl -s -u ${CIRCLE_TOKEN}: -o response.txt -w "%{http_code}" -X POST --header "Content-Type: application/json" -d "$DATA" $URL)
 
 if [ "$HTTP_RESPONSE" -ge "200" ] && [ "$HTTP_RESPONSE" -lt "300" ]; then
-    echo "API call succeeded."
-    echo "Response:"
-    cat response.txt
+  echo "API call succeeded."
+  echo "Response:"
+  cat response.txt
 else
-    echo -e "\e[93mReceived status code: ${HTTP_RESPONSE}\e[0m"
-    echo "Response:"
-    cat response.txt
-    exit 1
+  echo -e "\e[93mReceived status code: ${HTTP_RESPONSE}\e[0m"
+  echo "Response:"
+  cat response.txt
+  exit 1
 fi
